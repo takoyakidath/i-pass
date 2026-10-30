@@ -1,17 +1,20 @@
 import type { Db } from './db.js';
-import { getQuestion, type Question } from './questions.js';
+import { getQuestion, postedQuestionIds, type Question } from './questions.js';
+import { jstDate } from './time.js';
 
 export class ConflictError extends Error {}
 
-export function enqueue(db: Db, questionId: number, date: string): void {
+export function enqueue(db: Db, questionId: number, date: string, today: string = jstDate(new Date())): void {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`invalid date: ${date}`);
   const q = getQuestion(db, questionId);
   if (!q) throw new Error(`question ${questionId} not found`);
   if (q.status !== 'confirmed') throw new Error('only confirmed questions can be queued');
+  if (postedQuestionIds(db).has(questionId)) throw new Error(`question ${questionId} was already posted`);
+  if (date < today) throw new Error(`date ${date} is in the past`);
   if (db.prepare('SELECT 1 FROM queue WHERE scheduled_date = ?').get(date)) {
     throw new ConflictError(`date ${date} is already scheduled`);
   }
-  if (db.prepare('SELECT 1 FROM queue WHERE question_id = ?').get(questionId)) {
+  if (db.prepare('SELECT 1 FROM queue WHERE question_id = ? AND scheduled_date >= ?').get(questionId, today)) {
     throw new ConflictError(`question ${questionId} is already queued`);
   }
   db.prepare('INSERT INTO queue (question_id, scheduled_date) VALUES (?, ?)').run(questionId, date);

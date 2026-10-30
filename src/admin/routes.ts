@@ -5,7 +5,7 @@ import type { Config } from '../config.js';
 import type { Db } from '../db.js';
 import { jstDate } from '../scheduler.js';
 import { dequeue, enqueue, listQueue, ConflictError } from '../queue.js';
-import { createQuestion, getQuestion, listQuestions, setStatus, updateQuestion, type QuestionInput } from '../questions.js';
+import { createQuestion, getQuestion, listQuestions, postedQuestionIds, setStatus, updateQuestion, type QuestionInput } from '../questions.js';
 import { createAuthRouter, requireAdmin, type CodeVerifier } from './auth.js';
 import { layout, queuePage, questionForm, questionList } from './views.js';
 
@@ -96,8 +96,10 @@ export function createAdminRouter({ db, cfg, postNow }: AdminDeps, verify?: Code
     }
   });
 
-  const renderQueue = (res: express.Response, error?: string) =>
-    page(res, '出題予定', queuePage(res.locals.csrf, listQueue(db, new Date().toISOString().slice(0, 10)), listQuestions(db, { status: 'confirmed' }), error));
+  const renderQueue = (res: express.Response, error?: string) => {
+    const posted = postedQuestionIds(db);
+    return page(res, '出題予定', queuePage(res.locals.csrf, listQueue(db, new Date().toISOString().slice(0, 10)), listQuestions(db, { status: 'confirmed' }).filter((q) => !posted.has(q.id)), error));
+  };
 
   router.get('/queue', (_req, res) => renderQueue(res));
 
@@ -119,8 +121,13 @@ export function createAdminRouter({ db, cfg, postNow }: AdminDeps, verify?: Code
   const STATUS = { posted: 200, already: 409, 'no-stock': 422, failed: 502 } as const;
   router.post('/post-now', async (_req, res) => {
     if (!postNow) return res.status(501).send('manual posting is not configured');
-    const result = await postNow(jstDate(new Date()));
-    res.status(STATUS[result]).send(result);
+    try {
+      const result = await postNow(jstDate(new Date()));
+      res.status(STATUS[result]).send(result);
+    } catch (err) {
+      console.error('manual post failed:', err);
+      res.status(502).send('failed');
+    }
   });
 
   return router;

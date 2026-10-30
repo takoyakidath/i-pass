@@ -26,4 +26,17 @@ describe('loadConfig', () => {
   test('ADMIN_EMAILS is split and lowercased', () => {
     expect(loadConfig(base).adminEmails).toEqual(['a@x.jp', 'b@x.jp']);
   });
+
+  test.each(['8:30', '20', '25:00', '06:00', '07:00'])('EXPLAIN_TIME %s is rejected', (v) => {
+    expect(() => loadConfig({ ...base, EXPLAIN_TIME: v })).toThrow(/EXPLAIN_TIME/);
+  });
+
+  test('EXPLAIN_TIME 07:01 and 23:59 are accepted', () => {
+    expect(loadConfig({ ...base, EXPLAIN_TIME: '07:01' }).explainTime).toBe('07:01');
+    expect(loadConfig({ ...base, EXPLAIN_TIME: '23:59' }).explainTime).toBe('23:59');
+  });
+
+  test.each(['abc', '-1', '2.5'])('LOW_STOCK_THRESHOLD %s is rejected', (v) => {
+    expect(() => loadConfig({ ...base, LOW_STOCK_THRESHOLD: v })).toThrow(/LOW_STOCK_THRESHOLD/);
+  });
 });

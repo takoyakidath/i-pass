@@ -13,6 +13,21 @@ export type Config = {
   lowStockThreshold: number;
 };
 
+function parseExplainTime(v: string | undefined): string {
+  const t = v || '20:00';
+  // Must be zero-padded HH:mm (string comparison is used at runtime) and after the 07:00 post.
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(t) || t <= '07:00') {
+    throw new Error(`EXPLAIN_TIME must be HH:mm later than 07:00, got: ${t}`);
+  }
+  return t;
+}
+
+function parseThreshold(v: string | undefined): number {
+  if (v === undefined || v === '') return 5;
+  if (!/^\d+$/.test(v)) throw new Error(`LOW_STOCK_THRESHOLD must be a non-negative integer, got: ${v}`);
+  return Number(v);
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv): Config {
   const need = (key: string): string => {
     const v = env[key];
@@ -24,7 +39,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     slackSigningSecret: need('SLACK_SIGNING_SECRET'),
     quizChannelId: need('QUIZ_CHANNEL_ID'),
     opsChannelId: need('OPS_CHANNEL_ID'),
-    explainTime: env.EXPLAIN_TIME || '20:00',
+    explainTime: parseExplainTime(env.EXPLAIN_TIME),
     adminEmails: need('ADMIN_EMAILS')
       .split(',')
       .map((e) => e.trim().toLowerCase())
@@ -34,6 +49,6 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     baseUrl: need('BASE_URL'),
     dbPath: env.DB_PATH || './data/i-pass.db',
     sessionSecret: need('SESSION_SECRET'),
-    lowStockThreshold: Number(env.LOW_STOCK_THRESHOLD ?? 5),
+    lowStockThreshold: parseThreshold(env.LOW_STOCK_THRESHOLD),
   };
 }

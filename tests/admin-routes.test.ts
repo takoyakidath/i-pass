@@ -106,7 +106,7 @@ describe('queue', () => {
   test('a draft question cannot be queued (400)', async () => {
     const { agent, token, db } = await setup();
     const q = createQuestion(db, sampleInput());
-    const res = await agent.post('/admin/queue').type('form').send({ _csrf: token, questionId: String(q.id), date: '2026-11-02' });
+    const res = await agent.post('/admin/queue').type('form').send({ _csrf: token, questionId: String(q.id), date: '2999-01-02' });
     expect(res.status).toBe(400);
   });
 
@@ -115,7 +115,7 @@ describe('queue', () => {
     const a = confirmedQuestion(db);
     const b = confirmedQuestion(db, { body: 'b' });
     const post = (id: number) =>
-      agent.post('/admin/queue').type('form').send({ _csrf: token, questionId: String(id), date: '2026-11-02' });
+      agent.post('/admin/queue').type('form').send({ _csrf: token, questionId: String(id), date: '2999-01-02' });
     expect((await post(a.id)).status).toBe(302);
     expect((await post(b.id)).status).toBe(409);
   });
@@ -143,6 +143,13 @@ describe('html escaping', () => {
 });
 
 describe('post-now', () => {
+  test('a failure inside the post is a 502, not an unhandled rejection', async () => {
+    const { agent, token } = await setup(async () => {
+      throw new Error('boom');
+    });
+    expect((await agent.post('/admin/post-now').type('form').send({ _csrf: token })).status).toBe(502);
+  });
+
   test('runs today\'s post for the JST date and returns 200 when posted', async () => {
     const seen: string[] = [];
     const { agent, token } = await setup(async (d) => (seen.push(d), 'posted'));

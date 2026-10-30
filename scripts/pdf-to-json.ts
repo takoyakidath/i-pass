@@ -14,7 +14,7 @@ const PROMPT = `添付はIPA公開のITパスポート試験問題PDFです。�
 
 const client = new Anthropic();
 const stream = client.messages.stream({
-  model: process.env.ANTHROPIC_MODEL ?? 'claude-opus-5-5',
+  model: process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5-5',
   max_tokens: 64000,
   messages: [
     {

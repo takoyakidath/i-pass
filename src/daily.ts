@@ -21,20 +21,28 @@ export async function postDailyQuestion(
     return 'no-stock';
   }
 
+  // Claim the date synchronously (before any await) so overlapping runs - cron, catch-up,
+  // manual post - cannot both reach Slack. The UNIQUE posted_date makes the loser see 'already'.
+  try {
+    db.prepare("INSERT INTO posts (question_id, channel, ts, posted_date) VALUES (?, ?, 'pending', ?)").run(
+      question.id,
+      cfg.quizChannelId,
+      date,
+    );
+  } catch (err) {
+    if ((err as { code?: string }).code === 'SQLITE_CONSTRAINT_UNIQUE') return 'already';
+    throw err;
+  }
+
   let ts: string;
   try {
     ({ ts } = await slack.postMessage(cfg.quizChannelId, formatQuestion(question, date)));
   } catch (err) {
+    db.prepare("DELETE FROM posts WHERE posted_date = ? AND ts = 'pending'").run(date);
     await slack.notifyOps(`${date}: 出題の投稿に失敗しました: ${message(err)}`);
     return 'failed';
   }
-
-  db.prepare('INSERT INTO posts (question_id, channel, ts, posted_date) VALUES (?, ?, ?, ?)').run(
-    question.id,
-    cfg.quizChannelId,
-    ts,
-    date,
-  );
+  db.prepare("UPDATE posts SET ts = ? WHERE posted_date = ? AND ts = 'pending'").run(ts, date);
 
   const failed: string[] = [];
   for (const name of REACTIONS) {
@@ -57,7 +65,7 @@ export async function postExplanation(
   const post = db.prepare('SELECT * FROM posts WHERE posted_date = ?').get(date) as
     | { id: number; question_id: number; channel: string; ts: string; explained_at: string | null }
     | undefined;
-  if (!post) return 'no-post';
+  if (!post || post.ts === 'pending') return 'no-post';
   if (post.explained_at) return 'already';
 
   const question = getQuestion(db, post.question_id)!;

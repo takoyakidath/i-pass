@@ -94,3 +94,34 @@ describe('postExplanation', () => {
     expect(await postExplanation(d, '2026-11-01')).toBe('replied');
   });
 });
+
+describe('postDailyQuestion concurrency', () => {
+  test('two concurrent runs for the same date post only once', async () => {
+    const d = setup();
+    confirmedQuestion(d.db);
+    confirmedQuestion(d.db, { body: 'b' });
+    d.slack.postDelayMs = 20;
+    const res = await Promise.all([postDailyQuestion(d, '2026-11-01'), postDailyQuestion(d, '2026-11-01')]);
+    expect([...res].sort()).toEqual(['already', 'posted']);
+    expect(d.slack.messages).toHaveLength(1);
+  });
+
+  test('a failed post releases the date so a retry can post', async () => {
+    const d = setup();
+    confirmedQuestion(d.db);
+    d.slack.failPost = true;
+    expect(await postDailyQuestion(d, '2026-11-01')).toBe('failed');
+    d.slack.failPost = false;
+    expect(await postDailyQuestion(d, '2026-11-01')).toBe('posted');
+  });
+
+  test('a leftover pending claim blocks a second post and is never explained', async () => {
+    const d = setup();
+    const q = confirmedQuestion(d.db);
+    confirmedQuestion(d.db, { body: 'b' });
+    d.db.prepare("INSERT INTO posts (question_id, channel, ts, posted_date) VALUES (?, 'CQUIZ', 'pending', '2026-11-01')").run(q.id);
+    expect(await postDailyQuestion(d, '2026-11-01')).toBe('already');
+    expect(d.slack.messages).toHaveLength(0);
+    expect(await postExplanation(d, '2026-11-01')).toBe('no-post');
+  });
+});

@@ -7,10 +7,12 @@ export class FakeSlack implements SlackPort {
   replies: { channel: string; ts: string; msg: SlackMessage }[] = [];
   ops: string[] = [];
   failPost = false;
+  postDelayMs = 0;
   failReplies = false;
   failReactionAt: number | null = null;
 
   async postMessage(channel: string, msg: SlackMessage) {
+    if (this.postDelayMs) await new Promise((r) => setTimeout(r, this.postDelayMs));
     if (this.failPost) throw new Error('slack down');
     this.messages.push({ channel, msg });
     return { ts: `1700000000.00000${this.messages.length}` };

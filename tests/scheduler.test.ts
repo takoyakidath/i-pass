@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { catchUp, jstDate, runMorning } from '../src/scheduler.js';
+import { catchUp, jstDate, runEvening, runMorning } from '../src/scheduler.js';
 import type { Config } from '../src/config.js';
 import { confirmedQuestion, freshDb } from './helpers.js';
 import { FakeSlack } from './fake-slack.js';
@@ -64,5 +64,36 @@ describe('runMorning', () => {
     for (let i = 0; i < 5; i++) confirmedQuestion(d.db, { body: `q${i}` });
     await runMorning(d, '2026-11-01');
     expect(d.slack.ops).toHaveLength(0);
+  });
+});
+
+describe('missed explanations', () => {
+  const seedPost = (d: ReturnType<typeof setup>, date: string, ts: string) => {
+    const q = confirmedQuestion(d.db, { body: `q-${date}` });
+    d.db.prepare('INSERT INTO posts (question_id, channel, ts, posted_date) VALUES (?, ?, ?, ?)').run(q.id, 'CQUIZ', ts, date);
+  };
+
+  test('catchUp explains an earlier day that was never explained', async () => {
+    const d = setup();
+    seedPost(d, '2026-10-31', '111.1');
+    await catchUp(d, at('2026-11-01T08:00:00+09:00'));
+    expect(d.slack.replies.map((r) => r.ts)).toEqual(['111.1']);
+  });
+
+  test('runEvening explains earlier unexplained days and today', async () => {
+    const d = setup();
+    seedPost(d, '2026-10-31', '111.1');
+    seedPost(d, '2026-11-01', '222.2');
+    await runEvening(d, '2026-11-01');
+    expect(d.slack.replies.map((r) => r.ts)).toEqual(['111.1', '222.2']);
+  });
+
+  test('catchUp tells ops about a pending claim instead of posting again', async () => {
+    const d = setup();
+    confirmedQuestion(d.db);
+    seedPost(d, '2026-11-01', 'pending');
+    await catchUp(d, at('2026-11-01T08:00:00+09:00'));
+    expect(d.slack.messages).toHaveLength(0);
+    expect(d.slack.ops.some((t) => t.includes('不明'))).toBe(true);
   });
 });

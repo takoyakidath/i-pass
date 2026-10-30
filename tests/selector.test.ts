@@ -4,6 +4,7 @@ import { pickToday } from '../src/selector.js';
 import { createQuestion, setStatus } from '../src/questions.js';
 import { confirmedQuestion, freshDb, sampleInput } from './helpers.js';
 
+const TODAY = '2026-10-01';
 const markPosted = (db: any, qid: number, date: string) =>
   db.prepare("INSERT INTO posts (question_id, channel, ts, posted_date) VALUES (?, 'C1', '1.0', ?)").run(qid, date);
 
@@ -12,7 +13,7 @@ describe('pickToday', () => {
     const db = freshDb();
     confirmedQuestion(db);
     const queued = confirmedQuestion(db, { body: 'queued' });
-    enqueue(db, queued.id, '2026-11-01');
+    enqueue(db, queued.id, '2026-11-01', TODAY);
     expect(pickToday(db, '2026-11-01')?.id).toBe(queued.id);
   });
 
@@ -20,7 +21,7 @@ describe('pickToday', () => {
     const db = freshDb();
     const other = confirmedQuestion(db, { body: 'other' });
     const queued = confirmedQuestion(db, { body: 'queued' });
-    enqueue(db, queued.id, '2026-11-01');
+    enqueue(db, queued.id, '2026-11-01', TODAY);
     setStatus(db, queued.id, 'draft');
     expect(pickToday(db, '2026-11-01')?.id).toBe(other.id);
   });
@@ -39,7 +40,7 @@ describe('pickToday', () => {
   test('random pick leaves questions queued for a future date alone', () => {
     const db = freshDb();
     const future = confirmedQuestion(db, { body: 'future' });
-    enqueue(db, future.id, '2026-11-09');
+    enqueue(db, future.id, '2026-11-09', TODAY);
     expect(pickToday(db, '2026-11-01')).toBeNull();
   });
 
@@ -58,31 +59,63 @@ describe('queue', () => {
     const db = freshDb();
     const a = confirmedQuestion(db);
     const b = confirmedQuestion(db, { body: 'b' });
-    enqueue(db, a.id, '2026-11-01');
-    expect(() => enqueue(db, b.id, '2026-11-01')).toThrow(/date.*already/);
+    enqueue(db, a.id, '2026-11-01', TODAY);
+    expect(() => enqueue(db, b.id, '2026-11-01', TODAY)).toThrow(/date.*already/);
   });
 
   test('the same question cannot be queued twice', () => {
     const db = freshDb();
     const a = confirmedQuestion(db);
-    enqueue(db, a.id, '2026-11-01');
-    expect(() => enqueue(db, a.id, '2026-11-02')).toThrow(/already queued/);
+    enqueue(db, a.id, '2026-11-01', TODAY);
+    expect(() => enqueue(db, a.id, '2026-11-02', TODAY)).toThrow(/already queued/);
   });
 
   test('a draft question cannot be enqueued', () => {
     const db = freshDb();
     const d = createQuestion(db, sampleInput());
-    expect(() => enqueue(db, d.id, '2026-11-01')).toThrow(/confirmed/);
+    expect(() => enqueue(db, d.id, '2026-11-01', TODAY)).toThrow(/confirmed/);
   });
 
   test('listQueue returns upcoming entries in date order', () => {
     const db = freshDb();
     const a = confirmedQuestion(db);
     const b = confirmedQuestion(db, { body: 'b' });
-    enqueue(db, b.id, '2026-11-03');
-    enqueue(db, a.id, '2026-11-02');
+    enqueue(db, b.id, '2026-11-03', TODAY);
+    enqueue(db, a.id, '2026-11-02', TODAY);
     const c = confirmedQuestion(db, { body: 'c' });
-    enqueue(db, c.id, '2026-10-01');
+    enqueue(db, c.id, '2026-10-01', TODAY);
     expect(listQueue(db, '2026-11-01').map((e) => e.date)).toEqual(['2026-11-02', '2026-11-03']);
+  });
+});
+
+describe('queue vs history and the calendar', () => {
+  test('an already posted question cannot be queued', () => {
+    const db = freshDb();
+    const q = confirmedQuestion(db);
+    markPosted(db, q.id, '2026-09-01');
+    expect(() => enqueue(db, q.id, '2026-11-01', TODAY)).toThrow(/already posted/);
+  });
+
+  test('pickToday skips a queued question that was posted meanwhile', () => {
+    const db = freshDb();
+    const queued = confirmedQuestion(db, { body: 'queued' });
+    const other = confirmedQuestion(db, { body: 'other' });
+    enqueue(db, queued.id, '2026-11-01', TODAY);
+    markPosted(db, queued.id, '2026-10-20');
+    expect(pickToday(db, '2026-11-01')?.id).toBe(other.id);
+  });
+
+  test('a date in the past is rejected', () => {
+    const db = freshDb();
+    const q = confirmedQuestion(db);
+    expect(() => enqueue(db, q.id, '2026-09-30', TODAY)).toThrow(/past/);
+  });
+
+  test('an expired queue row does not block queueing the question again', () => {
+    const db = freshDb();
+    const q = confirmedQuestion(db);
+    enqueue(db, q.id, '2026-11-03', TODAY);
+    enqueue(db, q.id, '2026-11-10', '2026-11-05');
+    expect(listQueue(db, '2026-11-05').map((e) => e.date)).toEqual(['2026-11-10']);
   });
 });

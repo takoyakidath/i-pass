@@ -62,6 +62,10 @@ export function setStatus(db: Db, id: number, status: Status): void {
   updateQuestion(db, id, { status });
 }
 
+export function postedQuestionIds(db: Db): Set<number> {
+  return new Set((db.prepare('SELECT question_id FROM posts').all() as { question_id: number }[]).map((r) => r.question_id));
+}
+
 export function listQuestions(db: Db, filter: { status?: Status } = {}): Question[] {
   const rows = filter.status
     ? db.prepare('SELECT * FROM questions WHERE status = ? ORDER BY id').all(filter.status)
