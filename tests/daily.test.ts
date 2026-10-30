@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { postDailyQuestion } from '../src/daily.js';
+import { postDailyQuestion, postExplanation } from '../src/daily.js';
 import type { Config } from '../src/config.js';
 import { confirmedQuestion, freshDb } from './helpers.js';
 import { FakeSlack } from './fake-slack.js';
@@ -51,5 +51,46 @@ describe('postDailyQuestion', () => {
     expect(await postDailyQuestion(d, '2026-11-01')).toBe('posted');
     expect(d.db.prepare('SELECT COUNT(*) c FROM posts').get()).toEqual({ c: 1 });
     expect(d.slack.ops).toHaveLength(1);
+  });
+});
+
+describe('postExplanation', () => {
+  test('replies once in the question thread and marks explained_at', async () => {
+    const d = setup();
+    confirmedQuestion(d.db);
+    await postDailyQuestion(d, '2026-11-01');
+    const ts = d.slack.messages.length ? (d.db.prepare('SELECT ts FROM posts').get() as any).ts : '';
+    expect(await postExplanation(d, '2026-11-01')).toBe('replied');
+    expect(d.slack.replies).toHaveLength(1);
+    expect(d.slack.replies[0]).toMatchObject({ channel: 'CQUIZ', ts });
+    expect(d.slack.replies[0].msg.text).toContain('正解: ウ');
+    expect((d.db.prepare('SELECT explained_at FROM posts').get() as any).explained_at).not.toBeNull();
+  });
+
+  test('a second call does not reply again', async () => {
+    const d = setup();
+    confirmedQuestion(d.db);
+    await postDailyQuestion(d, '2026-11-01');
+    await postExplanation(d, '2026-11-01');
+    expect(await postExplanation(d, '2026-11-01')).toBe('already');
+    expect(d.slack.replies).toHaveLength(1);
+  });
+
+  test('no post that day: no-post and ops are not bothered', async () => {
+    const d = setup();
+    expect(await postExplanation(d, '2026-11-01')).toBe('no-post');
+    expect(d.slack.ops).toHaveLength(0);
+  });
+
+  test('reply failure notifies ops and stays retryable', async () => {
+    const d = setup();
+    confirmedQuestion(d.db);
+    await postDailyQuestion(d, '2026-11-01');
+    d.slack.failReplies = true;
+    expect(await postExplanation(d, '2026-11-01')).toBe('failed');
+    expect(d.slack.ops).toHaveLength(1);
+    expect((d.db.prepare('SELECT explained_at FROM posts').get() as any).explained_at).toBeNull();
+    d.slack.failReplies = false;
+    expect(await postExplanation(d, '2026-11-01')).toBe('replied');
   });
 });

@@ -1,6 +1,7 @@
 import type { Config } from './config.js';
 import type { Db } from './db.js';
-import { formatQuestion, REACTIONS } from './format.js';
+import { formatExplanation, formatQuestion, REACTIONS } from './format.js';
+import { getQuestion } from './questions.js';
 import { pickToday } from './selector.js';
 import type { SlackPort } from './slack-port.js';
 
@@ -47,4 +48,25 @@ export async function postDailyQuestion(
     await slack.notifyOps(`${date}: スタンプの付与に失敗しました: ${failed.join(', ')}`);
   }
   return 'posted';
+}
+
+export async function postExplanation(
+  { db, slack }: Deps,
+  date: string,
+): Promise<'replied' | 'already' | 'no-post' | 'failed'> {
+  const post = db.prepare('SELECT * FROM posts WHERE posted_date = ?').get(date) as
+    | { id: number; question_id: number; channel: string; ts: string; explained_at: string | null }
+    | undefined;
+  if (!post) return 'no-post';
+  if (post.explained_at) return 'already';
+
+  const question = getQuestion(db, post.question_id)!;
+  try {
+    await slack.replyInThread(post.channel, post.ts, formatExplanation(question));
+  } catch (err) {
+    await slack.notifyOps(`${date}: 解説の返信に失敗しました: ${message(err)}`);
+    return 'failed';
+  }
+  db.prepare("UPDATE posts SET explained_at = datetime('now') WHERE id = ?").run(post.id);
+  return 'replied';
 }
