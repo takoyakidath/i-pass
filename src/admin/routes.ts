@@ -3,12 +3,14 @@ import cookieParser from 'cookie-parser';
 import express, { type RequestHandler } from 'express';
 import type { Config } from '../config.js';
 import type { Db } from '../db.js';
+import { jstDate } from '../scheduler.js';
 import { dequeue, enqueue, listQueue, ConflictError } from '../queue.js';
 import { createQuestion, getQuestion, listQuestions, setStatus, updateQuestion, type QuestionInput } from '../questions.js';
 import { createAuthRouter, requireAdmin, type CodeVerifier } from './auth.js';
 import { layout, queuePage, questionForm, questionList } from './views.js';
 
-export type AdminDeps = { db: Db; cfg: Config };
+export type PostNow = (date: string) => Promise<'posted' | 'already' | 'no-stock' | 'failed'>;
+export type AdminDeps = { db: Db; cfg: Config; postNow?: PostNow };
 
 const CSRF_COOKIE = 'csrf';
 
@@ -41,7 +43,7 @@ function readQuestion(body: Record<string, string>): QuestionInput {
   };
 }
 
-export function createAdminRouter({ db, cfg }: AdminDeps, verify?: CodeVerifier, authUrl?: (s: string) => string): express.Router {
+export function createAdminRouter({ db, cfg, postNow }: AdminDeps, verify?: CodeVerifier, authUrl?: (s: string) => string): express.Router {
   const router = express.Router();
   router.use(cookieParser(cfg.sessionSecret));
   router.use(express.urlencoded({ extended: false }));
@@ -112,6 +114,13 @@ export function createAdminRouter({ db, cfg }: AdminDeps, verify?: CodeVerifier,
   router.post('/queue/:id/delete', (req, res) => {
     dequeue(db, Number(req.params.id));
     res.redirect('/admin/queue');
+  });
+
+  const STATUS = { posted: 200, already: 409, 'no-stock': 422, failed: 502 } as const;
+  router.post('/post-now', async (_req, res) => {
+    if (!postNow) return res.status(501).send('manual posting is not configured');
+    const result = await postNow(jstDate(new Date()));
+    res.status(STATUS[result]).send(result);
   });
 
   return router;

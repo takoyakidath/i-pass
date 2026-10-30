@@ -4,6 +4,7 @@ import bolt from '@slack/bolt';
 import { createAdminRouter } from './admin/routes.js';
 import { loadConfig } from './config.js';
 import { openDb } from './db.js';
+import { postDailyQuestion } from './daily.js';
 import { catchUp, startScheduler } from './scheduler.js';
 import { boltSlackPort } from './slack-port.js';
 
@@ -13,8 +14,8 @@ const db = openDb(cfg.dbPath);
 
 const receiver = new bolt.ExpressReceiver({ signingSecret: cfg.slackSigningSecret });
 const app = new bolt.App({ token: cfg.slackBotToken, receiver });
-receiver.router.use('/admin', createAdminRouter({ db, cfg }));
 const deps = { db, slack: boltSlackPort(app.client, cfg), cfg };
+receiver.router.use('/admin', createAdminRouter({ ...deps, postNow: (date) => postDailyQuestion(deps, date) }));
 
 await app.start(Number(process.env.PORT ?? 3000));
 await catchUp(deps, new Date());

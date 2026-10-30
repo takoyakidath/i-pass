@@ -11,7 +11,8 @@ export function layout(title: string, csrf: string, inner: string): string {
 table{border-collapse:collapse;width:100%}td,th{border-bottom:1px solid #ddd;padding:.4rem;text-align:left;vertical-align:top}
 input[type=text],textarea,select{width:100%;box-sizing:border-box}nav a{margin-right:1rem}.err{color:#b00020}</style></head><body>
 <nav><a href="/admin/questions">問題</a><a href="/admin/queue">出題予定</a>
-<form method="post" action="/admin/logout" style="display:inline"><input type="hidden" name="_csrf" value="${esc(csrf)}"><button>ログアウト</button></form></nav>
+<form method="post" action="/admin/logout" style="display:inline"><input type="hidden" name="_csrf" value="${esc(csrf)}"><button>ログアウト</button></form>
+<form method="post" action="/admin/post-now" style="display:inline" onsubmit="return confirm('今日の問題を今すぐ出題しますか?')"><input type="hidden" name="_csrf" value="${esc(csrf)}"><button>今すぐ出題</button></form></nav>
 <h1>${esc(title)}</h1>${inner}</body></html>`;
 }
 

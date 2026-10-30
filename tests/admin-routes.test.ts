@@ -14,13 +14,13 @@ const cfg = {
   googleClientSecret: 'cs',
 } as Config;
 
-async function setup() {
+async function setup(postNow?: (date: string) => Promise<string>) {
   const db = freshDb();
   const app = express();
   app.use(
     '/admin',
     createAdminRouter(
-      { db, cfg },
+      { db, cfg, postNow: postNow as any },
       async () => ({ email: 'a@x.jp', emailVerified: true }),
       (state) => `http://google.test/auth?state=${state}`,
     ),
@@ -139,5 +139,25 @@ describe('html escaping', () => {
     const list = await agent.get('/admin/questions');
     expect(list.text).not.toContain('<script>alert(1)</script>');
     expect(list.text).toContain('&lt;script&gt;');
+  });
+});
+
+describe('post-now', () => {
+  test('runs today\'s post for the JST date and returns 200 when posted', async () => {
+    const seen: string[] = [];
+    const { agent, token } = await setup(async (d) => (seen.push(d), 'posted'));
+    const res = await agent.post('/admin/post-now').type('form').send({ _csrf: token });
+    expect(res.status).toBe(200);
+    expect(seen[0]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  test('already posted today is a 409', async () => {
+    const { agent, token } = await setup(async () => 'already');
+    expect((await agent.post('/admin/post-now').type('form').send({ _csrf: token })).status).toBe(409);
+  });
+
+  test('requires login', async () => {
+    const { app } = await setup(async () => 'posted');
+    expect((await request(app).post('/admin/post-now')).status).toBe(302);
   });
 });
