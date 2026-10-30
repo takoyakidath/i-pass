@@ -1,4 +1,5 @@
 import cookieParser from 'cookie-parser';
+import { sign } from 'cookie-signature';
 import express from 'express';
 import request from 'supertest';
 import { describe, expect, test } from 'vitest';
@@ -49,6 +50,25 @@ describe('requireAdmin', () => {
     const agent = request.agent(makeApp());
     await agent.get('/login-as?email=a@x.jp');
     expect((await agent.get('/admin/secret')).text).toBe('ok');
+  });
+});
+
+describe('session expiry', () => {
+  const forged = (value: string) => `admin_session=${encodeURIComponent('s:' + sign(value, cfg.sessionSecret))}`;
+
+  test('a validly signed session whose embedded expiry has passed is rejected', async () => {
+    const res = await request(makeApp()).get('/admin/secret').set('Cookie', forged(`a@x.jp|${Date.now() - 1000}`));
+    expect(res.status).toBe(302);
+  });
+
+  test('a signed session without an expiry (old format) is rejected', async () => {
+    const res = await request(makeApp()).get('/admin/secret').set('Cookie', forged('a@x.jp'));
+    expect(res.status).toBe(302);
+  });
+
+  test('a signed session with a future expiry is accepted', async () => {
+    const res = await request(makeApp()).get('/admin/secret').set('Cookie', forged(`a@x.jp|${Date.now() + 60_000}`));
+    expect(res.text).toBe('ok');
   });
 });
 

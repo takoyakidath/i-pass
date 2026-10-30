@@ -19,14 +19,25 @@ const cookieOpts = (cfg: Config, maxAge: number) => ({
   maxAge,
 });
 
+// The signed payload is `email|expiresAtMs`, so expiry is enforced server-side
+// and does not depend on the browser honouring the cookie's own maxAge.
 export function setSession(res: Response, email: string, cfg: Config): void {
-  res.cookie(SESSION_COOKIE, email.toLowerCase(), cookieOpts(cfg, EIGHT_HOURS));
+  res.cookie(SESSION_COOKIE, `${email.toLowerCase()}|${Date.now() + EIGHT_HOURS}`, cookieOpts(cfg, EIGHT_HOURS));
+}
+
+function readSession(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const i = value.lastIndexOf('|');
+  if (i < 0) return null;
+  const expiresAt = Number(value.slice(i + 1));
+  if (!Number.isFinite(expiresAt) || Date.now() >= expiresAt) return null;
+  return value.slice(0, i);
 }
 
 export function requireAdmin(cfg: Config): RequestHandler {
   return (req, res, next) => {
-    const email: unknown = req.signedCookies?.[SESSION_COOKIE];
-    if (typeof email !== 'string') return res.redirect('/admin/login');
+    const email = readSession(req.signedCookies?.[SESSION_COOKIE]);
+    if (email === null) return res.redirect('/admin/login');
     if (!isAllowed(email, cfg)) return res.status(403).send('forbidden');
     res.locals.adminEmail = email;
     next();

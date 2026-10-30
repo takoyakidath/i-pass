@@ -1,16 +1,18 @@
 import type { Db } from './db.js';
 import { getQuestion, type Question } from './questions.js';
 
+export class ConflictError extends Error {}
+
 export function enqueue(db: Db, questionId: number, date: string): void {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`invalid date: ${date}`);
   const q = getQuestion(db, questionId);
   if (!q) throw new Error(`question ${questionId} not found`);
   if (q.status !== 'confirmed') throw new Error('only confirmed questions can be queued');
   if (db.prepare('SELECT 1 FROM queue WHERE scheduled_date = ?').get(date)) {
-    throw new Error(`date ${date} is already scheduled`);
+    throw new ConflictError(`date ${date} is already scheduled`);
   }
   if (db.prepare('SELECT 1 FROM queue WHERE question_id = ?').get(questionId)) {
-    throw new Error(`question ${questionId} is already queued`);
+    throw new ConflictError(`question ${questionId} is already queued`);
   }
   db.prepare('INSERT INTO queue (question_id, scheduled_date) VALUES (?, ?)').run(questionId, date);
 }

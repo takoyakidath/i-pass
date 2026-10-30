@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import bolt from '@slack/bolt';
+import { createAdminRouter } from './admin/routes.js';
 import { loadConfig } from './config.js';
 import { openDb } from './db.js';
 import { catchUp, startScheduler } from './scheduler.js';
@@ -12,6 +13,7 @@ const db = openDb(cfg.dbPath);
 
 const receiver = new bolt.ExpressReceiver({ signingSecret: cfg.slackSigningSecret });
 const app = new bolt.App({ token: cfg.slackBotToken, receiver });
+receiver.router.use('/admin', createAdminRouter({ db, cfg }));
 const deps = { db, slack: boltSlackPort(app.client, cfg), cfg };
 
 await app.start(Number(process.env.PORT ?? 3000));
