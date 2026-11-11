@@ -1,0 +1,21 @@
+[Unit]
+Description=i-pass IT passport quiz Slack bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ipass
+WorkingDirectory=/opt/i-pass
+EnvironmentFile=/etc/i-pass.env
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/i-pass
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

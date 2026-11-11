@@ -62,5 +62,17 @@ DB_PATH=... npx tsx scripts/import-questions.ts questions.json
 
 - **停止**: ホスティング側でプロセス(またはアプリ)を停止する。停止中は出題されない。再開後の追いつき投稿は「当日7時以降・未投稿」の場合のみ。
 - **手動運用に切り替える**: 停止したうえで、Slackに直接投稿する。
-- **バックアップ**: `DB_PATH` のSQLiteファイルを定期的にコピーする(例: 週1回)。
+- **バックアップ**: 第9節の `deploy/backup.sh` で日次スナップショットを取る。
 - **引き継ぎ**: ソースコード、この手順書、環境変数一覧、Slack/Google/ホスティングの管理者アカウントを運営と共有しておく。
+
+## 9. 自宅Ubuntuサーバーへのデプロイ
+
+Vercel等のサーバーレスは常駐プロセスとローカルSQLiteを前提とする本Botに向かないため、常駐できるサーバーに置く。Slackへは外向きの通信だけなので、Slack用のポート開放は不要。
+
+1. Node.js 22 以上と `sqlite3` を入れる(`apt install sqlite3`)。専用ユーザーを作る: `sudo useradd -r -m -s /usr/sbin/nologin ipass`。
+2. `/opt/i-pass` にソースを置き、`npm ci && npm run build` を実行。`sudo mkdir -p /var/lib/i-pass && sudo chown ipass: /var/lib/i-pass`。
+3. `/etc/i-pass.env` に環境変数(第1節)を `KEY=value` で書く。`DB_PATH=/var/lib/i-pass/i-pass.db`、`chmod 600`、所有者は root。
+4. `sudo cp deploy/i-pass.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now i-pass`。ログは `journalctl -u i-pass -f`。
+5. **管理画面の公開**: Googleのリダイレクト先に `https://` のURLが必要(`localhost` 以外のhttpは不可)。Cloudflare Tunnel か Tailscale Funnel で `localhost:3000` を公開し、そのURLを `BASE_URL` に設定する(Google側の承認済みリダイレクトURIは `{BASE_URL}/admin/callback`)。
+6. **バックアップ**: `deploy/backup.sh` を日次で実行する(例: `0 3 * * * /opt/i-pass/deploy/backup.sh`)。別ディスクや別マシンへもコピーすること。
+7. 更新: `git pull && npm ci && npm run build && sudo systemctl restart i-pass`。再起動時は起動時追いつきが働く(第4節)。
