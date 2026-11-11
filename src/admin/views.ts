@@ -30,6 +30,7 @@ label input,label textarea,label select{margin-top:.25rem;font-weight:400}
 button{font:inherit;font-size:.9rem;padding:.4rem .8rem;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);cursor:pointer}
 button:hover{border-color:var(--accent)}
 form.card>button:last-child,.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.notice{background:color-mix(in srgb,var(--accent) 10%,transparent);padding:.6rem .8rem;border-radius:6px}
 .err{color:var(--danger);background:color-mix(in srgb,var(--danger) 10%,transparent);padding:.6rem .8rem;border-radius:6px}
 .badge{display:inline-block;padding:.05rem .55rem;border-radius:999px;font-size:.78rem;font-weight:600;border:1px solid currentColor}
 .badge.confirmed{color:var(--ok)}.badge.posted{color:var(--muted)}.danger{color:var(--danger)}.summary{color:var(--muted)}.summary strong{color:var(--fg)}.badge.draft{color:var(--warn)}
@@ -48,7 +49,7 @@ form.card>button:last-child,.primary{background:var(--accent);border-color:var(-
 
 const hidden = (csrf: string) => `<input type="hidden" name="_csrf" value="${esc(csrf)}">`;
 
-export function questionForm(csrf: string, action: string, q?: Partial<Question>, error?: string): string {
+export function questionForm(csrf: string, action: string, q?: Partial<Question>, error?: string, notice?: string, aiButton = false): string {
   const c = q?.choices ?? ['', '', '', ''];
   const choiceInputs = [0, 1, 2, 3]
     .map((i) => `<label>${choiceLabel(i as 0)} <input type="text" name="choice${i}" value="${esc(c[i] ?? '')}" required></label>`)
@@ -56,7 +57,7 @@ export function questionForm(csrf: string, action: string, q?: Partial<Question>
   const options = [0, 1, 2, 3]
     .map((i) => `<option value="${i}"${q?.answer === i ? ' selected' : ''}>${choiceLabel(i as 0)}</option>`)
     .join('');
-  return `${error ? `<p class="err">${esc(error)}</p>` : ''}
+  return `${error ? `<p class="err">${esc(error)}</p>` : ''}${notice ? `<p class="notice">${esc(notice)}</p>` : ''}
 <form class="card" method="post" action="${esc(action)}">${hidden(csrf)}
 <p><label>問題文<textarea name="body" rows="4" required>${esc(q?.body ?? '')}</textarea></label></p>
 <div class="choices">${choiceInputs}</div>
@@ -64,10 +65,23 @@ export function questionForm(csrf: string, action: string, q?: Partial<Question>
 <p><label>解説<textarea name="explanation" rows="4">${esc(q?.explanation ?? '')}</textarea></label></p>
 <p><label>出典(確認済みにするには必須)<input type="text" name="source" value="${esc(q?.source ?? '')}"></label></p>
 <p><label>分野<input type="text" name="category" value="${esc(q?.category ?? '')}"></label></p>
-<button>保存</button></form>`;
+${aiButton ? `<button class="plain" formaction="${esc(action)}/ai-review">AIで解説を生成・検証</button> ` : ''}<button>保存</button></form>`;
 }
 
-export type ListInfo = { posted: Set<number>; stock: number; total: number; filter: string; kw: string };
+export function generateForm(csrf: string, error?: string): string {
+  const cats = ['', 'ストラテジ', 'マネジメント', 'テクノロジ']
+    .map((c) => `<option value="${c}">${c || '指定なし'}</option>`)
+    .join('');
+  return `${error ? `<p class="err">${esc(error)}</p>` : ''}
+<p class="summary">AIがオリジナルの問題を<strong>下書き</strong>で作ります。出典が空のため、内容と出典を確認して入力するまで確認済みにできません。生成には数十秒かかります。</p>
+<form class="card" method="post" action="/admin/questions/generate">${hidden(csrf)}
+<p><label>分野<select name="category">${cats}</select></label></p>
+<p><label>テーマ(任意)<input type="text" name="theme" maxlength="200" placeholder="例: 情報セキュリティ、損益分岐点"></label></p>
+<p><label>問題数(1〜5)<input type="text" name="count" value="3" inputmode="numeric"></label></p>
+<button>下書きを生成</button></form>`;
+}
+
+export type ListInfo = { ai?: boolean; posted: Set<number>; stock: number; total: number; filter: string; kw: string };
 
 const FILTERS: [string, string][] = [
   ['', 'すべて'],
@@ -95,7 +109,7 @@ export function questionList(csrf: string, questions: Question[], info: ListInfo
   return `<p class="summary">全 ${info.total} 問 / 未出題の在庫 <strong>${info.stock}</strong> 問</p>
 <form class="toolbar" method="get" action="/admin/questions">
 <select name="status">${options}</select><input type="text" name="q" value="${esc(info.kw)}" placeholder="問題文・分野・出典で検索"><button class="primary">絞り込み</button>
-<a class="btn" href="/admin/questions/new">問題を追加</a></form>
+<a class="btn" href="/admin/questions/new">問題を追加</a>${info.ai ? '<a class="btn" href="/admin/questions/generate">AIで下書き生成</a>' : ''}</form>
 <div class="card"><table><tr><th>ID</th><th>状態</th><th>問題文</th><th>分野</th><th>出典</th><th></th></tr>${rows}</table>${
     rows ? '' : '<p class="empty">該当する問題がありません</p>'
   }</div>`;

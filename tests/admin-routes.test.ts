@@ -1,9 +1,10 @@
 import express from 'express';
 import request from 'supertest';
 import { describe, expect, test } from 'vitest';
+import type { AiPort } from '../src/ai.js';
 import { createAdminRouter } from '../src/admin/routes.js';
 import type { Config } from '../src/config.js';
-import { createQuestion, listQuestions } from '../src/questions.js';
+import { createQuestion, listQuestions, setStatus } from '../src/questions.js';
 import { confirmedQuestion, freshDb, sampleInput } from './helpers.js';
 
 const cfg = {
@@ -14,13 +15,13 @@ const cfg = {
   googleClientSecret: 'cs',
 } as Config;
 
-async function setup(postNow?: (date: string) => Promise<string>) {
+async function setup(postNow?: (date: string) => Promise<string>, ai?: AiPort) {
   const db = freshDb();
   const app = express();
   app.use(
     '/admin',
     createAdminRouter(
-      { db, cfg, postNow: postNow as any },
+      { db, cfg, postNow: postNow as any, ai },
       async () => ({ email: 'a@x.jp', emailVerified: true }),
       (state) => `http://google.test/auth?state=${state}`,
     ),
@@ -204,5 +205,62 @@ describe('question list filters and delete', () => {
     const q = createQuestion(db, sampleInput());
     expect((await agent.post(`/admin/questions/${q.id}/delete`).type('form').send({})).status).toBe(403);
     expect(listQuestions(db)).toHaveLength(1);
+  });
+});
+
+describe('AI features', () => {
+  const draft = { body: 'AI問題', choices: ['a', 'b', 'c', 'd'] as [string, string, string, string], answer: 1 as const, explanation: 'e', source: '', category: 'テクノロジ' };
+  const fakeAi = (over: Partial<AiPort> = {}): AiPort => ({
+    generateDrafts: async () => [draft, { ...draft, body: 'AI問題2' }],
+    reviewQuestion: async () => ({ explanation: 'AI解説', answerOk: true, note: '' }),
+    ...over,
+  });
+
+  test('generated questions are saved as drafts with an empty source, so they cannot be confirmed unreviewed', async () => {
+    const { db, agent, token } = await setup(undefined, fakeAi());
+    const res = await agent.post('/admin/questions/generate').type('form').send({ _csrf: token, category: 'テクノロジ', theme: 'x', count: '2' });
+    expect(res.status).toBe(302);
+    const qs = listQuestions(db);
+    expect(qs.map((q) => [q.status, q.source])).toEqual([['draft', ''], ['draft', '']]);
+    expect(() => setStatus(db, qs[0].id, 'confirmed')).toThrow(/source/);
+  });
+
+  test('clamps the count and rejects an unknown category', async () => {
+    let seen = 0;
+    const { agent, token } = await setup(undefined, fakeAi({ generateDrafts: async (o) => ((seen = o.count), []) }));
+    await agent.post('/admin/questions/generate').type('form').send({ _csrf: token, category: '', theme: '', count: '99' });
+    expect(seen).toBe(5);
+    expect((await agent.post('/admin/questions/generate').type('form').send({ _csrf: token, category: 'x', count: '1' })).status).toBe(400);
+  });
+
+  test('a generation failure is a 502 and saves nothing', async () => {
+    const { db, agent, token } = await setup(undefined, fakeAi({ generateDrafts: async () => { throw new Error('boom'); } }));
+    const res = await agent.post('/admin/questions/generate').type('form').send({ _csrf: token, category: '', count: '1' });
+    expect(res.status).toBe(502);
+    expect(listQuestions(db)).toHaveLength(0);
+  });
+
+  test('review fills the explanation but does not save it', async () => {
+    const { db, agent, token } = await setup(undefined, fakeAi());
+    const q = createQuestion(db, sampleInput({ explanation: '元の解説' }));
+    const res = await agent.post(`/admin/questions/${q.id}/ai-review`).type('form').send(form(token));
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('AI解説');
+    expect(listQuestions(db)[0].explanation).toBe('元の解説');
+  });
+
+  test('review warns when the AI doubts the answer', async () => {
+    const { db, agent, token } = await setup(undefined, fakeAi({ reviewQuestion: async () => ({ explanation: 'x', answerOk: false, note: 'イも正解' }) }));
+    const q = createQuestion(db, sampleInput());
+    const res = await agent.post(`/admin/questions/${q.id}/ai-review`).type('form').send(form(token));
+    expect(res.text).toContain('イも正解');
+  });
+
+  test('without an AI port the routes are 501 and the buttons are hidden', async () => {
+    const { db, agent, token } = await setup();
+    const q = createQuestion(db, sampleInput());
+    expect((await agent.get('/admin/questions/generate')).status).toBe(501);
+    expect((await agent.post(`/admin/questions/${q.id}/ai-review`).type('form').send(form(token))).status).toBe(501);
+    expect((await agent.get(`/admin/questions/${q.id}`)).text).not.toContain('ai-review');
   });
 });

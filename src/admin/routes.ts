@@ -6,11 +6,12 @@ import type { Db } from '../db.js';
 import { jstDate } from '../scheduler.js';
 import { dequeue, enqueue, listQueue, ConflictError } from '../queue.js';
 import { createQuestion, deleteQuestion, InUseError, getQuestion, listQuestions, postedQuestionIds, setStatus, updateQuestion, type QuestionInput } from '../questions.js';
+import { CATEGORIES, type AiPort } from '../ai.js';
 import { createAuthRouter, requireAdmin, type CodeVerifier } from './auth.js';
-import { layout, queuePage, questionForm, questionList } from './views.js';
+import { generateForm, layout, queuePage, questionForm, questionList } from './views.js';
 
 export type PostNow = (date: string) => Promise<'posted' | 'already' | 'no-stock' | 'failed'>;
-export type AdminDeps = { db: Db; cfg: Config; postNow?: PostNow };
+export type AdminDeps = { db: Db; cfg: Config; postNow?: PostNow; ai?: AiPort };
 
 const CSRF_COOKIE = 'csrf';
 
@@ -43,7 +44,7 @@ function readQuestion(body: Record<string, string>): QuestionInput {
   };
 }
 
-export function createAdminRouter({ db, cfg, postNow }: AdminDeps, verify?: CodeVerifier, authUrl?: (s: string) => string): express.Router {
+export function createAdminRouter({ db, cfg, postNow, ai }: AdminDeps, verify?: CodeVerifier, authUrl?: (s: string) => string): express.Router {
   const router = express.Router();
   router.use(cookieParser(cfg.sessionSecret));
   router.use(express.urlencoded({ extended: false }));
@@ -67,8 +68,30 @@ export function createAdminRouter({ db, cfg, postNow }: AdminDeps, verify?: Code
           (filter === 'posted' ? posted.has(q.id) : filter === 'stock' ? q.status === 'confirmed' && !posted.has(q.id) : q.status === filter)) &&
         (kw === '' || q.body.includes(kw) || q.category.includes(kw) || q.source.includes(kw)),
     );
-    page(res, '問題一覧', questionList(res.locals.csrf, shown, { posted, stock, total: all.length, filter, kw }));
+    page(res, '問題一覧', questionList(res.locals.csrf, shown, { ai: !!ai, posted, stock, total: all.length, filter, kw }));
   });
+  router.get('/questions/generate', (_req, res) => {
+    if (!ai) return res.status(501).send('AI機能は設定されていません(ANTHROPIC_API_KEY)');
+    page(res, 'AIで問題の下書きを作る', generateForm(res.locals.csrf));
+  });
+
+  router.post('/questions/generate', async (req, res) => {
+    if (!ai) return res.status(501).send('AI機能は設定されていません(ANTHROPIC_API_KEY)');
+    const category = String(req.body.category ?? '');
+    const theme = String(req.body.theme ?? '').trim().slice(0, 200);
+    const count = Math.min(5, Math.max(1, Number.parseInt(String(req.body.count), 10) || 1));
+    if (category !== '' && !(CATEGORIES as readonly string[]).includes(category)) return res.status(400).send('invalid category');
+    try {
+      const drafts = await ai.generateDrafts({ category, theme, count });
+      for (const d of drafts) createQuestion(db, d);
+      res.redirect('/admin/questions');
+    } catch (err) {
+      console.error('ai generate failed:', err);
+      res.status(502);
+      page(res, 'AIで問題の下書きを作る', generateForm(res.locals.csrf, `生成に失敗しました: ${(err as Error).message}`));
+    }
+  });
+
   router.get('/questions/new', (_req, res) => page(res, '問題を追加', questionForm(res.locals.csrf, '/admin/questions')));
 
   router.post('/questions', (req, res) => {
@@ -81,10 +104,29 @@ export function createAdminRouter({ db, cfg, postNow }: AdminDeps, verify?: Code
     }
   });
 
+  router.post('/questions/:id/ai-review', async (req, res) => {
+    const id = Number(req.params.id);
+    if (!ai) return res.status(501).send('AI機能は設定されていません(ANTHROPIC_API_KEY)');
+    if (!getQuestion(db, id)) return res.status(404).send('not found');
+    const input = readQuestion(req.body);
+    const action = `/admin/questions/${id}`;
+    try {
+      const r = await ai.reviewQuestion(input);
+      const notice = r.answerOk
+        ? 'AIの解説案を入力しました(まだ保存されていません)。内容を確認して保存してください。'
+        : `⚠ AIは指定された正解に疑問を示しています: ${r.note || '理由なし'}(解説案は入力済み・未保存)`;
+      page(res, `問題 #${id} を編集`, questionForm(res.locals.csrf, action, { ...input, explanation: r.explanation }, undefined, notice, true));
+    } catch (err) {
+      console.error('ai review failed:', err);
+      res.status(502);
+      page(res, `問題 #${id} を編集`, questionForm(res.locals.csrf, action, input, `AIの呼び出しに失敗しました: ${(err as Error).message}`, undefined, true));
+    }
+  });
+
   router.get('/questions/:id', (req, res) => {
     const q = getQuestion(db, Number(req.params.id));
     if (!q) return res.status(404).send('not found');
-    page(res, `問題 #${q.id} を編集`, questionForm(res.locals.csrf, `/admin/questions/${q.id}`, q));
+    page(res, `問題 #${q.id} を編集`, questionForm(res.locals.csrf, `/admin/questions/${q.id}`, q, undefined, undefined, !!ai));
   });
 
   router.post('/questions/:id', (req, res) => {
