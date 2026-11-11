@@ -32,10 +32,10 @@ button:hover{border-color:var(--accent)}
 form.card>button:last-child,.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .err{color:var(--danger);background:color-mix(in srgb,var(--danger) 10%,transparent);padding:.6rem .8rem;border-radius:6px}
 .badge{display:inline-block;padding:.05rem .55rem;border-radius:999px;font-size:.78rem;font-weight:600;border:1px solid currentColor}
-.badge.confirmed{color:var(--ok)}.badge.draft{color:var(--warn)}
+.badge.confirmed{color:var(--ok)}.badge.posted{color:var(--muted)}.danger{color:var(--danger)}.summary{color:var(--muted)}.summary strong{color:var(--fg)}.badge.draft{color:var(--warn)}
 .empty{color:var(--muted);text-align:center;padding:1.5rem 0}
 .actions{display:flex;gap:.6rem;align-items:center}.actions form{margin:0}
-.toolbar{display:flex;flex-wrap:wrap;gap:.5rem;margin:0 0 1rem}.toolbar>*{flex:1 1 140px}.toolbar select{flex:3 1 260px}.toolbar button{flex:0 0 auto}
+.toolbar{display:flex;flex-wrap:wrap;gap:.5rem;margin:0 0 1rem}.toolbar>*{flex:1 1 140px}.toolbar select{flex:0 1 160px}.toolbar input[type=text]{flex:3 1 240px}.toolbar button,.toolbar .btn{flex:0 0 auto}
 .choices{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
 @media(max-width:600px){.choices{grid-template-columns:1fr}}
 .btn{display:inline-block;padding:.4rem .8rem;border-radius:6px;background:var(--accent);color:#fff;text-decoration:none;font-size:.9rem}
@@ -67,19 +67,37 @@ export function questionForm(csrf: string, action: string, q?: Partial<Question>
 <button>保存</button></form>`;
 }
 
-export function questionList(csrf: string, questions: Question[]): string {
+export type ListInfo = { posted: Set<number>; stock: number; total: number; filter: string; kw: string };
+
+const FILTERS: [string, string][] = [
+  ['', 'すべて'],
+  ['draft', '下書き'],
+  ['confirmed', '確認済み'],
+  ['stock', '未出題の在庫'],
+  ['posted', '出題済み'],
+];
+
+export function questionList(csrf: string, questions: Question[], info: ListInfo): string {
   const rows = questions
-    .map(
-      (q) => `<tr><td>${q.id}</td><td><span class="badge ${esc(q.status)}">${esc(q.status)}</span></td><td>${esc(q.body.slice(0, 60))}</td><td>${esc(q.source)}</td>
-<td class="actions"><a href="/admin/questions/${q.id}">編集</a>
+    .map((q) => {
+      const done = info.posted.has(q.id);
+      const del = done
+        ? ''
+        : `<form method="post" action="/admin/questions/${q.id}/delete" onsubmit="return confirm('この問題を削除しますか?')">${hidden(csrf)}<button class="plain danger">削除</button></form>`;
+      return `<tr><td>${q.id}</td><td><span class="badge ${esc(q.status)}">${esc(q.status)}</span>${done ? ' <span class="badge posted">出題済み</span>' : ''}</td><td>${esc(q.body.slice(0, 60))}</td><td>${esc(q.category)}</td><td>${esc(q.source)}</td>
+<td><div class="actions"><a href="/admin/questions/${q.id}">編集</a>
 <form method="post" action="/admin/questions/${q.id}/status">${hidden(csrf)}
 <input type="hidden" name="status" value="${q.status === 'draft' ? 'confirmed' : 'draft'}">
-<button class="plain">${q.status === 'draft' ? '確認済みにする' : '下書きに戻す'}</button></form></td></tr>`,
-    )
+<button class="plain">${q.status === 'draft' ? '確認済みにする' : '下書きに戻す'}</button></form>${del}</div></td></tr>`;
+    })
     .join('');
-  return `<p><a class="btn" href="/admin/questions/new">問題を追加</a></p>
-<div class="card"><table><tr><th>ID</th><th>状態</th><th>問題文</th><th>出典</th><th></th></tr>${rows}</table>${
-    rows ? '' : '<p class="empty">まだ問題がありません</p>'
+  const options = FILTERS.map(([v, l]) => `<option value="${v}"${v === info.filter ? ' selected' : ''}>${l}</option>`).join('');
+  return `<p class="summary">全 ${info.total} 問 / 未出題の在庫 <strong>${info.stock}</strong> 問</p>
+<form class="toolbar" method="get" action="/admin/questions">
+<select name="status">${options}</select><input type="text" name="q" value="${esc(info.kw)}" placeholder="問題文・分野・出典で検索"><button class="primary">絞り込み</button>
+<a class="btn" href="/admin/questions/new">問題を追加</a></form>
+<div class="card"><table><tr><th>ID</th><th>状態</th><th>問題文</th><th>分野</th><th>出典</th><th></th></tr>${rows}</table>${
+    rows ? '' : '<p class="empty">該当する問題がありません</p>'
   }</div>`;
 }
 

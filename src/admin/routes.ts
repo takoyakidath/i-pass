@@ -5,7 +5,7 @@ import type { Config } from '../config.js';
 import type { Db } from '../db.js';
 import { jstDate } from '../scheduler.js';
 import { dequeue, enqueue, listQueue, ConflictError } from '../queue.js';
-import { createQuestion, getQuestion, listQuestions, postedQuestionIds, setStatus, updateQuestion, type QuestionInput } from '../questions.js';
+import { createQuestion, deleteQuestion, InUseError, getQuestion, listQuestions, postedQuestionIds, setStatus, updateQuestion, type QuestionInput } from '../questions.js';
 import { createAuthRouter, requireAdmin, type CodeVerifier } from './auth.js';
 import { layout, queuePage, questionForm, questionList } from './views.js';
 
@@ -55,7 +55,20 @@ export function createAdminRouter({ db, cfg, postNow }: AdminDeps, verify?: Code
 
   router.get('/', (_req, res) => res.redirect('/admin/questions'));
 
-  router.get('/questions', (_req, res) => page(res, '問題一覧', questionList(res.locals.csrf, listQuestions(db))));
+  router.get('/questions', (req, res) => {
+    const filter = String(req.query.status ?? '');
+    const kw = String(req.query.q ?? '').trim();
+    const posted = postedQuestionIds(db);
+    const all = listQuestions(db);
+    const stock = all.filter((q) => q.status === 'confirmed' && !posted.has(q.id)).length;
+    const shown = all.filter(
+      (q) =>
+        (filter === '' ||
+          (filter === 'posted' ? posted.has(q.id) : filter === 'stock' ? q.status === 'confirmed' && !posted.has(q.id) : q.status === filter)) &&
+        (kw === '' || q.body.includes(kw) || q.category.includes(kw) || q.source.includes(kw)),
+    );
+    page(res, '問題一覧', questionList(res.locals.csrf, shown, { posted, stock, total: all.length, filter, kw }));
+  });
   router.get('/questions/new', (_req, res) => page(res, '問題を追加', questionForm(res.locals.csrf, '/admin/questions')));
 
   router.post('/questions', (req, res) => {
@@ -85,6 +98,15 @@ export function createAdminRouter({ db, cfg, postNow }: AdminDeps, verify?: Code
     }
   });
 
+  router.post('/questions/:id/delete', (req, res) => {
+    try {
+      deleteQuestion(db, Number(req.params.id));
+      res.redirect('/admin/questions');
+    } catch (err) {
+      res.status(err instanceof InUseError ? 409 : 400).send((err as Error).message);
+    }
+  });
+
   router.post('/questions/:id/status', (req, res) => {
     const status = req.body.status;
     if (status !== 'draft' && status !== 'confirmed') return res.status(400).send('invalid status');
@@ -98,7 +120,7 @@ export function createAdminRouter({ db, cfg, postNow }: AdminDeps, verify?: Code
 
   const renderQueue = (res: express.Response, error?: string) => {
     const posted = postedQuestionIds(db);
-    return page(res, '出題予定', queuePage(res.locals.csrf, listQueue(db, new Date().toISOString().slice(0, 10)), listQuestions(db, { status: 'confirmed' }).filter((q) => !posted.has(q.id)), error));
+    return page(res, '出題予定', queuePage(res.locals.csrf, listQueue(db, jstDate(new Date())), listQuestions(db, { status: 'confirmed' }).filter((q) => !posted.has(q.id)), error));
   };
 
   router.get('/queue', (_req, res) => renderQueue(res));

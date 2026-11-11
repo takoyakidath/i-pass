@@ -58,6 +58,7 @@ describe('admin auth wall', () => {
       ['post', '/admin/queue'],
       ['post', '/admin/questions/1/status'],
       ['post', '/admin/queue/1/delete'],
+      ['post', '/admin/questions/1/delete'],
     ] as const) {
       const res = await (request(app) as any)[method](path);
       expect(res.status, `${method} ${path}`).toBe(302);
@@ -166,5 +167,42 @@ describe('post-now', () => {
   test('requires login', async () => {
     const { app } = await setup(async () => 'posted');
     expect((await request(app).post('/admin/post-now')).status).toBe(302);
+  });
+});
+
+describe('question list filters and delete', () => {
+  test('filters by status and keyword', async () => {
+    const { db, agent } = await setup();
+    createQuestion(db, sampleInput({ body: 'ネットワークの問題', category: 'テクノロジ' }));
+    confirmedQuestion(db, { body: '経営の問題', category: 'ストラテジ' });
+    const drafts = await agent.get('/admin/questions?status=draft');
+    expect(drafts.text).toContain('ネットワークの問題');
+    expect(drafts.text).not.toContain('経営の問題');
+    const kw = await agent.get('/admin/questions?q=' + encodeURIComponent('ストラテジ'));
+    expect(kw.text).toContain('経営の問題');
+    expect(kw.text).not.toContain('ネットワークの問題');
+    expect((await agent.get('/admin/questions?q=zzz')).text).toContain('該当する問題がありません');
+  });
+
+  test('deletes an unused question', async () => {
+    const { db, agent, token } = await setup();
+    const q = createQuestion(db, sampleInput());
+    expect((await agent.post(`/admin/questions/${q.id}/delete`).type('form').send({ _csrf: token })).status).toBe(302);
+    expect(listQuestions(db)).toHaveLength(0);
+  });
+
+  test('refuses to delete a scheduled or posted question (409)', async () => {
+    const { db, agent, token } = await setup();
+    const q = confirmedQuestion(db);
+    db.prepare("INSERT INTO queue (question_id, scheduled_date) VALUES (?, '2099-01-01')").run(q.id);
+    expect((await agent.post(`/admin/questions/${q.id}/delete`).type('form').send({ _csrf: token })).status).toBe(409);
+    expect(listQuestions(db)).toHaveLength(1);
+  });
+
+  test('delete without a csrf token is rejected', async () => {
+    const { db, agent } = await setup();
+    const q = createQuestion(db, sampleInput());
+    expect((await agent.post(`/admin/questions/${q.id}/delete`).type('form').send({})).status).toBe(403);
+    expect(listQuestions(db)).toHaveLength(1);
   });
 });

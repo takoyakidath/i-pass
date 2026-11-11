@@ -72,3 +72,14 @@ export function listQuestions(db: Db, filter: { status?: Status } = {}): Questio
     : db.prepare('SELECT * FROM questions ORDER BY id').all();
   return rows.map(fromRow);
 }
+
+export class InUseError extends Error {}
+
+// A question that was posted or is scheduled must stay: posts/queue reference it.
+export function deleteQuestion(db: Db, id: number): void {
+  if (!getQuestion(db, id)) throw new Error(`question ${id} not found`);
+  const used =
+    db.prepare('SELECT 1 FROM posts WHERE question_id = ?').get(id) ?? db.prepare('SELECT 1 FROM queue WHERE question_id = ?').get(id);
+  if (used) throw new InUseError('出題済み、または出題予定のため削除できません');
+  db.prepare('DELETE FROM questions WHERE id = ?').run(id);
+}
