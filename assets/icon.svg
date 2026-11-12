@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#1e3a8a"/>
+  <!-- letter "i": stem + dot -->
+  <rect x="208" y="236" width="96" height="190" rx="22" fill="#ffffff"/>
+  <circle cx="256" cy="150" r="62" fill="#fbbf24"/>
+  <!-- check mark inside the dot (pass) -->
+  <path d="M228 152 L249 175 L288 128" fill="none" stroke="#1e3a8a" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
