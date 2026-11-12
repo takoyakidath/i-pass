@@ -7,7 +7,8 @@ export type ImportResult = {
   errors: { index: number; message: string }[];
 };
 
-export function importQuestions(db: Db, json: unknown): ImportResult {
+// defaultSource fills a missing/empty `source`. Imported questions stay drafts either way.
+export function importQuestions(db: Db, json: unknown, opts: { defaultSource?: string } = {}): ImportResult {
   const result: ImportResult = { imported: 0, skipped: 0, errors: [] };
   if (!Array.isArray(json)) {
     result.errors.push({ index: -1, message: 'payload must be a JSON array' });
@@ -27,7 +28,7 @@ export function importQuestions(db: Db, json: unknown): ImportResult {
         choices: q.choices,
         answer: q.answer,
         explanation: q.explanation ?? '',
-        source: q.source ?? '',
+        source: q.source?.trim() ? q.source : (opts.defaultSource ?? ''),
         category: q.category ?? '',
       });
       result.imported++;

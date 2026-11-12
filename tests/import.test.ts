@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 import { importQuestions } from '../src/import.js';
 import { listQuestions } from '../src/questions.js';
@@ -41,5 +42,24 @@ describe('importQuestions', () => {
     const db = freshDb();
     expect(importQuestions(db, { nope: 1 }).errors).toHaveLength(1);
     expect(importQuestions(db, [null, 'x']).errors.map((e) => e.index)).toEqual([0, 1]);
+  });
+});
+
+describe('defaultSource and the bundled question file', () => {
+  test('defaultSource only fills an empty source and the question stays a draft', () => {
+    const db = freshDb();
+    const base = { body: 'a', choices: ['1', '2', '3', '4'], answer: 0, explanation: '' };
+    importQuestions(db, [{ ...base, source: '' }, { ...base, body: 'b', source: '令和5年度 問1' }], { defaultSource: 'オリジナル' });
+    const [a, b] = listQuestions(db);
+    expect([a.source, a.status, b.source]).toEqual(['オリジナル', 'draft', '令和5年度 問1']);
+  });
+
+  test('questions/original-001.json imports cleanly with no duplicates or errors', () => {
+    const db = freshDb();
+    const json = JSON.parse(readFileSync(new URL('../questions/original-001.json', import.meta.url), 'utf8'));
+    const res = importQuestions(db, json);
+    expect(res.errors).toEqual([]);
+    expect(res.imported).toBe(json.length);
+    expect(importQuestions(db, json).skipped).toBe(json.length);
   });
 });

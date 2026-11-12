@@ -40,6 +40,8 @@ npx tsx scripts/pdf-to-json.ts <IPA公開問題.pdf> questions.json   # ANTHROPI
 DB_PATH=... npx tsx scripts/import-questions.ts questions.json
 ```
 
+同梱のオリジナル問題(`questions/original-001.json`、60問)は `DB_PATH=... npm run import -- questions/original-001.json --default-source="オリジナル問題"` で読み込める(内容は人が確認してから)。
+
 取り込んだ問題はすべて**下書き**。管理画面で出典を確認し「確認済みにする」と出題対象になる。過去問の利用条件は運営と事前に確認すること。
 
 ## 6. 日々の運用
