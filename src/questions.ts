@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import type { Db } from './db.js';
 
 export type Status = 'draft' | 'confirmed';
@@ -10,6 +11,8 @@ export type Question = {
   source: string;
   category: string;
   status: Status;
+  // Set when a page-crop image is attached; the token is the public /img/<token> name.
+  imageToken?: string;
 };
 export type QuestionInput = Omit<Question, 'id' | 'status'>;
 
@@ -23,12 +26,14 @@ function validate(q: Partial<QuestionInput>): void {
   if (q.body !== undefined && !q.body.trim()) throw new Error('body is required');
 }
 
+const SELECT = 'SELECT q.*, i.token AS imageToken FROM questions q LEFT JOIN question_images i ON i.question_id = q.id';
+
 function fromRow(r: any): Question {
-  return { ...r, choices: JSON.parse(r.choices) };
+  return { ...r, choices: JSON.parse(r.choices), imageToken: r.imageToken ?? undefined };
 }
 
 export function getQuestion(db: Db, id: number): Question | undefined {
-  const r = db.prepare('SELECT * FROM questions WHERE id = ?').get(id);
+  const r = db.prepare(`${SELECT} WHERE q.id = ?`).get(id);
   return r ? fromRow(r) : undefined;
 }
 
@@ -68,8 +73,8 @@ export function postedQuestionIds(db: Db): Set<number> {
 
 export function listQuestions(db: Db, filter: { status?: Status } = {}): Question[] {
   const rows = filter.status
-    ? db.prepare('SELECT * FROM questions WHERE status = ? ORDER BY id').all(filter.status)
-    : db.prepare('SELECT * FROM questions ORDER BY id').all();
+    ? db.prepare(`${SELECT} WHERE q.status = ? ORDER BY q.id`).all(filter.status)
+    : db.prepare(`${SELECT} ORDER BY q.id`).all();
   return rows.map(fromRow);
 }
 
@@ -82,4 +87,18 @@ export function deleteQuestion(db: Db, id: number): void {
     db.prepare('SELECT 1 FROM posts WHERE question_id = ?').get(id) ?? db.prepare('SELECT 1 FROM queue WHERE question_id = ?').get(id);
   if (used) throw new InUseError('出題済み、または出題予定のため削除できません');
   db.prepare('DELETE FROM questions WHERE id = ?').run(id);
+}
+
+export function setQuestionImage(db: Db, id: number, mime: string, data: Buffer): string {
+  if (!getQuestion(db, id)) throw new Error(`question ${id} not found`);
+  const token = randomBytes(12).toString('hex');
+  db.prepare(
+    `INSERT INTO question_images (question_id, token, mime, data) VALUES (?, ?, ?, ?)
+     ON CONFLICT(question_id) DO UPDATE SET token = excluded.token, mime = excluded.mime, data = excluded.data`,
+  ).run(id, token, mime, data);
+  return token;
+}
+
+export function getImageByToken(db: Db, token: string): { mime: string; data: Buffer } | undefined {
+  return db.prepare('SELECT mime, data FROM question_images WHERE token = ?').get(token) as { mime: string; data: Buffer } | undefined;
 }

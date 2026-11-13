@@ -35,6 +35,12 @@ describe('format', () => {
     expect(text).toContain('a &lt; b &amp; c &gt; d');
   });
 
+  test('keeps a fenced code block with its indentation, escaping inside it', () => {
+    const body = '次のプログラムの結果は。\n```\nif (a < 7)\n  prize ← 500\nendif\n```';
+    const { text } = formatQuestion(q({ body }), '2026-11-01');
+    expect(text).toContain('```\nif (a &lt; 7)\n  prize ← 500\nendif\n```');
+  });
+
   test('choiceLabel and REACTIONS map ア-エ to one-four', () => {
     expect([0, 1, 2, 3].map((i) => choiceLabel(i as 0))).toEqual(['ア', 'イ', 'ウ', 'エ']);
     expect(REACTIONS).toEqual(['one', 'two', 'three', 'four']);

@@ -36,7 +36,7 @@ export async function postDailyQuestion(
 
   let ts: string;
   try {
-    ({ ts } = await slack.postMessage(cfg.quizChannelId, formatQuestion(question, date)));
+    ({ ts } = await slack.postMessage(cfg.quizChannelId, formatQuestion(question, date, cfg.baseUrl)));
   } catch (err) {
     db.prepare("DELETE FROM posts WHERE posted_date = ? AND ts = 'pending'").run(date);
     await slack.notifyOps(`${date}: 出題の投稿に失敗しました: ${message(err)}`);

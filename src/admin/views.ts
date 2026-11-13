@@ -59,6 +59,7 @@ export function questionForm(csrf: string, action: string, q?: Partial<Question>
     .join('');
   return `${error ? `<p class="err">${esc(error)}</p>` : ''}${notice ? `<p class="notice">${esc(notice)}</p>` : ''}
 <form class="card" method="post" action="${esc(action)}">${hidden(csrf)}
+${q?.imageToken ? `<p><img src="/img/${esc(q.imageToken)}.png" alt="問題の図" style="max-width:100%;border:1px solid var(--line);border-radius:6px;background:#fff"></p>` : ''}
 <p><label>問題文<textarea name="body" rows="4" required>${esc(q?.body ?? '')}</textarea></label></p>
 <div class="choices">${choiceInputs}</div>
 <p><label>正解 <select name="answer">${options}</select></label></p>
@@ -98,7 +99,7 @@ export function questionList(csrf: string, questions: Question[], info: ListInfo
       const del = done
         ? ''
         : `<form method="post" action="/admin/questions/${q.id}/delete" onsubmit="return confirm('この問題を削除しますか?')">${hidden(csrf)}<button class="plain danger">削除</button></form>`;
-      return `<tr><td>${q.id}</td><td><span class="badge ${esc(q.status)}">${esc(q.status)}</span>${done ? ' <span class="badge posted">出題済み</span>' : ''}</td><td>${esc(q.body.slice(0, 60))}</td><td>${esc(q.category)}</td><td>${esc(q.source)}</td>
+      return `<tr><td>${q.id}</td><td><span class="badge ${esc(q.status)}">${esc(q.status)}</span>${done ? ' <span class="badge posted">出題済み</span>' : ''}${q.imageToken ? ' <span class="badge">図</span>' : ''}</td><td>${esc(q.body.slice(0, 60))}</td><td>${esc(q.category)}</td><td>${esc(q.source)}</td>
 <td><div class="actions"><a href="/admin/questions/${q.id}">編集</a>
 <form method="post" action="/admin/questions/${q.id}/status">${hidden(csrf)}
 <input type="hidden" name="status" value="${q.status === 'draft' ? 'confirmed' : 'draft'}">

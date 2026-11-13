@@ -15,6 +15,12 @@ CREATE TABLE IF NOT EXISTS questions (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS question_images (
+  question_id INTEGER PRIMARY KEY REFERENCES questions(id) ON DELETE CASCADE,
+  token TEXT NOT NULL UNIQUE,
+  mime TEXT NOT NULL,
+  data BLOB NOT NULL
+);
 CREATE TABLE IF NOT EXISTS queue (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   question_id INTEGER NOT NULL REFERENCES questions(id),
