@@ -42,6 +42,8 @@ DB_PATH=... npx tsx scripts/import-questions.ts questions.json
 
 同梱のオリジナル問題(`questions/original-001.json`、60問)は `DB_PATH=... npm run import -- questions/original-001.json --default-source="オリジナル問題"` で読み込める(内容は人が確認してから)。
 
+IPA過去問の取り込み用データ(OCR・書き起こし・切り抜き画像)は、公開しない別の非公開リポジトリ `takoyakidath/i-pass-data` にある(README に取り込み手順)。このリポジトリには含めない。
+
 図・表を含む問題は、問題ページの切り抜き画像を付けて出題できる。取り込みJSONの各項目に `image`(JSONファイルからの相対パスのPNG)を書くと、画像はDBに保存される(`question_images`、バックアップにも含まれる)。Slackへは画像ブロックで出し、画像は Bot 自身が `{BASE_URL}/img/<ランダム名>.png` で公開する。**Slack のサーバーが取りに来るため、`BASE_URL` は外から https で届く URL にすること**(localhost では画像が表示されない)。画像付きの項目は重複判定を `source` で行うので、`source` が必須。
 
 取り込んだ問題はすべて**下書き**。管理画面で出典を確認し「確認済みにする」と出題対象になる。過去問の利用条件は運営と事前に確認すること。
